@@ -951,12 +951,9 @@ def read_urls_from_file(filename):
 def init_output_file(output_file, total_urls):
     try:
         with open(output_file, 'w') as f:
-            f.write("="*50 + "\n")
             f.write("SSTI SCAN RESULTS\n")
-            f.write("="*50 + "\n")
             f.write(f"Scan Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
             f.write(f"Total URLs to Scan: {total_urls}\n")
-            f.write("="*50 + "\n\n")
     except Exception as e:
         print(f"{colors.RED}[ERROR] Failed to create output file: {e}{colors.END}")
 def append_finding_to_file(output_file, finding_text):
@@ -966,16 +963,13 @@ def append_finding_to_file(output_file, finding_text):
         finding_clean = finding_clean.replace(colors.BOLD, '').replace(colors.END, '')
         with open(output_file, 'a') as f:
             f.write(finding_clean + "\n")
-            f.write("-"*50 + "\n")
             f.flush()
     except Exception as e:
         print(f"{colors.RED}[ERROR] Failed to write to output file: {e}{colors.END}")
 def finalize_output_file(output_file, scanned, findings_count):
     try:
         with open(output_file, 'a') as f:
-            f.write("\n" + "="*50 + "\n")
             f.write(f"Scan Complete: {findings_count} findings out of {scanned} URLs\n")
-            f.write("="*50 + "\n")
     except Exception as e:
         print(f"{colors.RED}[ERROR] Failed to finalize output file: {e}{colors.END}")
 async def scan_url_async(semaphore, url, cookie, output_file, findings_counter, total_urls):

@@ -1,0 +1,58 @@
+name: SSTI Scan WITHOUT Cookie
+
+on:
+  workflow_dispatch:
+    inputs:
+      url_base64:
+        description: 'Base64 encoded url.txt file'
+        required: true
+        type: string
+
+jobs:
+  scan:
+    name: Run SSTI Scanner without Cookie
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests beautifulsoup4 aiohttp urllib3
+      
+      - name: Decode URL list from Base64
+        run: |
+          echo "${{ github.event.inputs.url_base64 }}" | base64 --decode > url.txt
+          echo "URL count: $(wc -l < url.txt)"
+          echo "First few URLs:"
+          head -3 url.txt
+      
+      - name: Run SSTI Scanner without Cookie
+        run: |
+          python ssti_scanner.py -l url.txt -o hasil.txt
+      
+      - name: Upload Scan Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: ssti-scan-results-without-cookie
+          path: hasil.txt
+          retention-days: 30
+      
+      - name: Display Results Summary
+        if: always()
+        run: |
+          if [ -f hasil.txt ]; then
+            echo "=== SCAN RESULTS ==="
+            cat hasil.txt
+            echo "===================="
+          else
+            echo "No results file found"
+          fi

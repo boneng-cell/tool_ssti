@@ -316,10 +316,12 @@ class SSTIScanner:
                 found.append(pattern)
         return found
     def detect_error_patterns_contextual(self, html, status_code, soup):
+        if status_code < 500:
+            return []
         html_lower = html.lower()
         engine_names = ['handlebars', 'jinja2', 'twig', 'smarty', 'blade', 'freemarker', 'velocity', 'thymeleaf', 'django', 'flask', 'tornado', 'mako', 'cheetah', 'chameleon', 'genshi']
         for engine in engine_names:
-            if engine in html_lower and status_code == 500:
+            if engine in html_lower:
                 in_pre_code = bool(soup.find_all(['pre', 'code'])) if soup else False
                 if in_pre_code or 'error' in html_lower or 'exception' in html_lower:
                     return [f"{engine}_detected"]
@@ -327,17 +329,15 @@ class SSTIScanner:
         found = []
         for pattern in error_patterns_contextual:
             if pattern in html_lower:
-                if status_code == 500 or in_pre_code:
+                if in_pre_code:
                     found.append(pattern)
         common_words = ['error', 'exception', 'line', 'at']
         for word in common_words:
             if word in html_lower:
-                if status_code == 500 and in_pre_code:
-                    found.append(f"{word}_in_pre_500")
-                elif status_code == 500:
+                if in_pre_code:
                     context = self.get_element_context(soup, word)
                     if context and not context['is_content_tag']:
-                        found.append(f"{word}_in_500")
+                        found.append(f"{word}_in_pre")
         return found
     def detect_engine_signatures(self, html):
         html_lower = html.lower()
@@ -398,59 +398,61 @@ class SSTIScanner:
     def analyze_response(self, html, status_code):
         html_lower = html.lower() if html else ""
         soup = BeautifulSoup(html, 'html.parser') if html else None
-        detected_engines = self.detect_template_engine(html)
-        if detected_engines:
-            return {
-                'verdict': 'CRITICAL',
-                'reason': f"Engine detected: {', '.join(detected_engines)}",
-                'engines': detected_engines,
-                'has_engine': True,
-                'has_error': True,
-                'has_non_suspicious': any(k in html_lower for k in self.non_suspicious_keywords)
-            }
-        engine_signatures = self.detect_engine_signatures(html)
-        if engine_signatures:
-            return {
-                'verdict': 'CRITICAL',
-                'reason': f"Engine detected: {', '.join(engine_signatures)}",
-                'engines': engine_signatures,
-                'has_engine': True,
-                'has_error': True,
-                'has_non_suspicious': any(k in html_lower for k in self.non_suspicious_keywords)
-            }
-        stack_trace = self.detect_stack_trace(html)
-        if stack_trace and len(stack_trace) >= 2 and (status_code == 500 or (soup and soup.find_all(['pre', 'code']))):
-            return {
-                'verdict': 'HIGH',
-                'reason': f"Stack trace detected: {len(stack_trace)} patterns",
-                'traces': stack_trace,
-                'has_engine': False,
-                'has_error': True,
-                'has_non_suspicious': any(k in html_lower for k in self.non_suspicious_keywords)
-            }
-        error_patterns = self.detect_error_patterns_contextual(html, status_code, soup)
-        if error_patterns:
-            if status_code == 500 and soup and soup.find_all(['pre', 'code']):
+        if status_code >= 500:
+            detected_engines = self.detect_template_engine(html)
+            if detected_engines:
                 return {
-                    'verdict': 'MEDIUM',
-                    'reason': f"Error patterns in 500/pre: {', '.join(error_patterns[:2])}",
-                    'errors': error_patterns,
+                    'verdict': 'CRITICAL',
+                    'reason': f"Engine detected: {', '.join(detected_engines)}",
+                    'engines': detected_engines,
+                    'has_engine': True,
+                    'has_error': True,
+                    'has_non_suspicious': any(k in html_lower for k in self.non_suspicious_keywords)
+                }
+            engine_signatures = self.detect_engine_signatures(html)
+            if engine_signatures:
+                return {
+                    'verdict': 'CRITICAL',
+                    'reason': f"Engine detected: {', '.join(engine_signatures)}",
+                    'engines': engine_signatures,
+                    'has_engine': True,
+                    'has_error': True,
+                    'has_non_suspicious': any(k in html_lower for k in self.non_suspicious_keywords)
+                }
+            stack_trace = self.detect_stack_trace(html)
+            if stack_trace and len(stack_trace) >= 2:
+                return {
+                    'verdict': 'HIGH',
+                    'reason': f"Stack trace detected: {len(stack_trace)} patterns",
+                    'traces': stack_trace,
                     'has_engine': False,
                     'has_error': True,
                     'has_non_suspicious': any(k in html_lower for k in self.non_suspicious_keywords)
                 }
-            else:
-                self.suspicious_payloads.append({'type': 'error_hint', 'patterns': error_patterns})
-        errors = self.detect_error_messages(html)
-        if errors:
-            return {
-                'verdict': 'LOW',
-                'reason': f"Error messages: {', '.join(errors[:2])}",
-                'errors': errors,
-                'has_engine': False,
-                'has_error': True,
-                'has_non_suspicious': any(k in html_lower for k in self.non_suspicious_keywords)
-            }
+            error_patterns = self.detect_error_patterns_contextual(html, status_code, soup)
+            if error_patterns:
+                if soup and soup.find_all(['pre', 'code']):
+                    return {
+                        'verdict': 'MEDIUM',
+                        'reason': f"Error patterns in 500/pre: {', '.join(error_patterns[:2])}",
+                        'errors': error_patterns,
+                        'has_engine': False,
+                        'has_error': True,
+                        'has_non_suspicious': any(k in html_lower for k in self.non_suspicious_keywords)
+                    }
+                else:
+                    self.suspicious_payloads.append({'type': 'error_hint', 'patterns': error_patterns})
+        else:
+            errors = self.detect_error_messages(html)
+            if errors:
+                return {
+                    'verdict': 'LOW',
+                    'reason': f"Error messages: {', '.join(errors[:2])}",
+                    'errors': errors,
+                    'has_engine': False,
+                    'has_error': True,
+                    'has_non_suspicious': any(k in html_lower for k in self.non_suspicious_keywords)
+                }
         has_non_suspicious = any(k in html_lower for k in self.non_suspicious_keywords)
         if has_non_suspicious and status_code >= 400:
             return {

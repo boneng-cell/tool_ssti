@@ -3,8 +3,8 @@ name: SSTI Scan WITHOUT Cookie
 on:
   workflow_dispatch:
     inputs:
-      url_base64:
-        description: 'Base64 encoded url.txt file'
+      url_file:
+        description: 'Temporary filename for url.txt in repo'
         required: true
         type: string
 
@@ -28,9 +28,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
       
-      - name: Decode URL list from Base64
+      - name: Download URL list from repo
         run: |
-          echo "${{ github.event.inputs.url_base64 }}" | base64 --decode > url.txt
+          curl -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+               -H "Accept: application/vnd.github.v3.raw" \
+               -o url.txt \
+               "https://api.github.com/repos/${{ github.repository }}/contents/${{ github.event.inputs.url_file }}"
           echo "URL count: $(wc -l < url.txt)"
           echo "First few URLs:"
           head -3 url.txt
@@ -56,3 +59,12 @@ jobs:
           else
             echo "No results file found"
           fi
+      
+      - name: Cleanup temp files
+        if: always()
+        run: |
+          curl -X DELETE \
+               -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+               -H "Accept: application/vnd.github.v3+json" \
+               "https://api.github.com/repos/${{ github.repository }}/contents/${{ github.event.inputs.url_file }}" \
+               -d '{"message":"Cleanup after scan","sha":"${{ steps.get_sha.outputs.sha }}"}' || true
